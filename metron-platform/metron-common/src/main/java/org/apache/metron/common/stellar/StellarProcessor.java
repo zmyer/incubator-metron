@@ -18,6 +18,10 @@
 
 package org.apache.metron.common.stellar;
 
+import com.google.common.cache.Cache;
+
+import java.util.concurrent.TimeUnit;
+
 /**
  * The Stellar Processor is intended to allow for general transformations using the Stellar
  * domain specific language.  In contrast to the StellarPredicateProcessor where
@@ -27,7 +31,21 @@ package org.apache.metron.common.stellar;
  */
 public class StellarProcessor extends BaseStellarProcessor<Object> {
 
+  /**
+   * Create a default stellar processor.  This processor uses the static expression cache.
+   */
   public StellarProcessor() {
     super(Object.class);
+  }
+
+  /**
+   * Create a stellar processor with a new expression cache.  NOTE: This object should be reused to prevent
+   * performance regressions.
+   * @param cacheSize
+   * @param expiryTime
+   * @param expiryUnit
+   */
+  public StellarProcessor(int cacheSize, int expiryTime, TimeUnit expiryUnit) {
+    super(Object.class, cacheSize, expiryTime, expiryUnit);
   }
 }

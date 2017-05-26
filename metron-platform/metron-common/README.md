@@ -5,6 +5,7 @@
 * [Stellar Language](#stellar-language)
     * [Stellar Language Keywords](#stellar-language-keywords)
     * [Stellar Core Functions](#stellar-core-functions)
+    * [Stellar Benchmarks](#stellar-benchmarks)
     * [Stellar Shell](#stellar-shell)
 * [Global Configuration](#global-configuration)
 * [Management Utility](#management-utility)
@@ -19,6 +20,11 @@ created to do simple computation and transformation.
 
 The query language supports the following:
 * Referencing fields in the enriched JSON
+* String literals are quoted with either `'` or `"`.
+* String literals support escaping for `'`, `"`, `\t`, `\r`, `\n`, and backslash 
+  * The literal `'\'foo\''` would represent `'foo'`
+  * The literal `"\"foo\""` would represent `"foo"`
+  * The literal `'foo \\ bar'` would represent `foo \ bar`
 * Simple boolean operations: `and`, `not`, `or`
 * Simple arithmetic operations: `*`, `/`, `+`, `-` on real numbers or integers
 * Simple comparison operations `<`, `>`, `<=`, `>=`
@@ -27,7 +33,7 @@ The query language supports the following:
 * Determining whether a field exists (via `exists`)
 * An `in` operator that works like the `in` in Python
 * The ability to have parenthesis to make order of operations explicit
-* User defined functions
+* User defined functions, including Lambda expressions 
 
 ## Stellar Language Keywords
 The following keywords need to be single quote escaped in order to be used in Stellar expressions:
@@ -72,16 +78,41 @@ Below is how the `==` operator is expected to work:
 
 The `!=` operator is the negation of the above.
 
+## Stellar Language Lambda Expressions
+
+Stellar provides the capability to pass lambda expressions to functions
+which wish to support that layer of indirection.  The syntax is:
+* `(named_variables) -> stellar_expression` : Lambda expression with named variables
+  * For instance, the lambda expression which calls `TO_UPPER` on a named argument `x` could be be expressed as `(x) -> TO_UPPER(x)`.
+* `var -> stellar_expression` : Lambda expression with a single named variable, `var`
+  * For instance, the lambda expression which calls `TO_UPPER` on a named argument `x` could be expressed as `x -> TO_UPPER(x)`.  Note, this is more succinct but equivalent to the example directly above.
+* `() -> stellar_expression` : Lambda expression with no named variables.
+  * If no named variables are needed, you may omit the named variable section.  For instance, the lambda expression which returns a constant `false` would be `() -> false`
+
+where 
+* `named_variables` is a comma separated list of variables to use in the Stellar expression
+* `stellar_expression` is an arbitrary stellar expression
+
+
+In the core language functions, we support basic functional programming primitives such as
+* `MAP` - Applies a lambda expression over a list of input.  For instance `MAP([ 'foo', 'bar'], (x) -> TO_UPPER(x) )` returns `[ 'FOO', 'BAR' ]`
+* `FILTER` - Filters a list by a predicate in the form of a lambda expression.  For instance `FILTER([ 'foo', 'bar'], (x ) -> x == 'foo' )` returns `[ 'foo' ]`
+* `REDUCE` - Applies a function over a list of input.  For instance `REDUCE([ 1, 2, 3], (sum, x) -> sum + x, 0 )` returns `6`
+
 ## Stellar Core Functions
 
 |                                                                                                    |
 | ----------                                                                                         |
 | [ `ABS`](../../metron-analytics/metron-statistics#abs)                                             |
+| [ `APPEND_IF_MISSING`](#append_if_missing)                                                         |
 | [ `BIN`](../../metron-analytics/metron-statistics#bin)                                             |
 | [ `BLOOM_ADD`](#bloom_add)                                                                         |
 | [ `BLOOM_EXISTS`](#bloom_exists)                                                                   |
 | [ `BLOOM_INIT`](#bloom_init)                                                                       |
 | [ `BLOOM_MERGE`](#bloom_merge)                                                                     |
+| [ `CHOP`](#chop)                                                                                   |
+| [ `CHOMP`](#chomp)                                                                                 |
+| [ `COUNT_MATCHES`](#count_matches)                                                                 |
 | [ `DAY_OF_MONTH`](#day_of_month)                                                                   |
 | [ `DAY_OF_WEEK`](#day_of_week)                                                                     |
 | [ `DAY_OF_YEAR`](#day_of_year)                                                                     |
@@ -93,6 +124,7 @@ The `!=` operator is the negation of the above.
 | [ `ENRICHMENT_GET`](#enrichment_get)                                                               |
 | [ `FILL_LEFT`](#fill_left)                                                                         |
 | [ `FILL_RIGHT`](#fill_right)                                                                       |
+| [ `FILTER`](#filter)                                                                         |
 | [ `FORMAT`](#format)                                                                               |
 | [ `HLLP_CARDINALITY`](../../metron-analytics/metron-statistics#hllp_cardinality)                   |
 | [ `HLLP_INIT`](../../metron-analytics/metron-statistics#hllp_init)                                 |
@@ -116,14 +148,18 @@ The `!=` operator is the negation of the above.
 | [ `KAFKA_PUT`](#kafka_put)                                                                         |
 | [ `KAFKA_TAIL`](#kafka_tail)                                                                       |
 | [ `LENGTH`](#length)                                                                               |
+| [ `LIST_ADD`](#list_add)                                                                               |
 | [ `MAAS_GET_ENDPOINT`](#maas_get_endpoint)                                                         |
 | [ `MAAS_MODEL_APPLY`](#maas_model_apply)                                                           |
+| [ `MAP`](#map)                                                                       |
 | [ `MAP_EXISTS`](#map_exists)                                                                       |
 | [ `MONTH`](#month)                                                                                 |
+| [ `PREPEND_IF_MISSING`](#prepend_if_missing)                                                       |
 | [ `PROFILE_GET`](#profile_get)                                                                     |
-| [ `PROFILE_FIXED`](#profile_fixed)                                                                     |
-| [ `PROFILE_WINDOW`](#profile_window)                                                                     |
+| [ `PROFILE_FIXED`](#profile_fixed)                                                                 |
+| [ `PROFILE_WINDOW`](#profile_window)                                                               |
 | [ `PROTOCOL_TO_NAME`](#protocol_to_name)                                                           |
+| [ `REDUCE`](#reduce)                                                                   |
 | [ `REGEXP_MATCH`](#regexp_match)                                                                   |
 | [ `SPLIT`](#split)                                                                                 |
 | [ `STARTS_WITH`](#starts_with)                                                                     |
@@ -166,6 +202,14 @@ The `!=` operator is the negation of the above.
 | [ `WEEK_OF_YEAR`](#week_of_year)                                                                   |
 | [ `YEAR`](#year)                                                                                   |
 
+### `APPEND_IF_MISSING`
+  * Description: Appends the suffix to the end of the string if the string does not already end with any of the suffixes.
+  * Input:
+    * string - The string to be appended.
+    * suffix - The string suffix to append to the end of the string.
+    * additionalsuffix - Optional - Additional string suffix that is a valid terminator.
+  * Returns: A new String if prefix was prepended, the same string otherwise.
+
 ### `BLOOM_ADD`
   * Description: Adds an element to the bloom filter passed in
   * Input:
@@ -192,6 +236,25 @@ The `!=` operator is the negation of the above.
   * Input:
     * bloomfilters - A list of bloom filters to merge
   * Returns: Bloom Filter or null if the list is empty
+
+### `CHOP`
+  * Description: Remove the last character from a String
+  * Input:
+    * string - the String to chop last character from, may be null
+  * Returns: String without last character, null if null String input
+
+### `CHOMP`
+  * Description: Removes one newline from end of a String if it's there, otherwise leave it alone. A newline is "\n", "\r", or "\r\n"
+  * Input:
+    * string - the String to chomp a newline from, may be null
+  * Returns: String without newline, null if null String input
+
+### `COUNT_MATCHES`
+  * Description: Counts how many times the substring appears in the larger string.
+  * Input:
+    * string - the CharSequence to check, may be null.
+    * substring/character - the substring or character to count, may be null.
+  * Returns: the number of non-overlapping occurrences, 0 if either CharSequence is null.
 
 ### `DAY_OF_MONTH`
   * Description: The numbered day within the month.  The first day within the month has a value of 1.
@@ -269,6 +332,13 @@ The `!=` operator is the negation of the above.
     * fill - the fill character string
     * len - the required length
   * Returns: Last element of the list
+
+### `FILTER`
+  * Description: Applies a filter in the form of a lambda expression to a list. e.g. `FILTER( [ 'foo', 'bar' ] , (x) -> x == 'foo')` would yield `[ 'foo']`
+  * Input:
+    * list - List of arguments.
+    * predicate - The lambda expression to apply.  This expression is assumed to take one argument and return a boolean.
+  * Returns: The input list filtered by the predicate.
 
 ### `FORMAT`
   * Description: Returns a formatted string using the specified format string and arguments. Uses Java's string formatting conventions.
@@ -397,6 +467,13 @@ The `!=` operator is the negation of the above.
     * input - Object of string or collection type (e.g. list)
   * Returns: Integer
 
+### `LIST_ADD`
+  * Description: Adds an element to a list.
+  * Input:
+    * list - List to add element to.
+    * element - Element to add to list
+  * Returns: Resulting list with the item added at the end.
+  
 ### `MAAS_GET_ENDPOINT`
   * Description: Inspects ZooKeeper and returns a map containing the name, version and url for the model referred to by the input parameters.
   * Input:
@@ -412,6 +489,13 @@ The `!=` operator is the negation of the above.
     * model_args - A Dictionary of arguments for the model (these become request params)
   * Returns: The output of the model deployed as a REST endpoint in Map form.  Assumes REST endpoint returns a JSON Map.
 
+### `MAP`
+  * Description: Applies lambda expression to a list of arguments. e.g. `MAP( [ 'foo', 'bar' ] , (x) -> TO_UPPER(x) )` would yield `[ 'FOO', 'BAR' ]`
+  * Input:
+    * list - List of arguments.
+    * transform_expression - The lambda expression to apply. This expression is assumed to take one argument.
+  * Returns: The input list transformed item-wise by the lambda expression.
+  
 ### `MAP_EXISTS`
   * Description: Checks for existence of a key in a map.
   * Input:
@@ -432,6 +516,14 @@ The `!=` operator is the negation of the above.
   * Input:
     * dateTime - The datetime as a long representing the milliseconds since unix epoch
   * Returns: The current month (0-based).
+
+### `PREPEND_IF_MISSING`
+  * Description: Prepends the prefix to the start of the string if the string does not already start with any of the prefixes.
+  * Input:
+    * string - The string to be prepended.
+    * prefix - The string prefix to prepend to the start of the string.
+    * additionalprefix - Optional - Additional string prefix that is valid.
+  * Returns: A new String if prefix was prepended, the same string otherwise.
 
 ### `PROFILE_GET`
   * Description: Retrieves a series of values from a stored profile.
@@ -465,6 +557,14 @@ The `!=` operator is the negation of the above.
     * IANA Number
   * Returns: The protocol name associated with the IANA number.
 
+### `REDUCE`
+  * Description: Reduces a list by a binary lambda expression. That is, the expression takes two arguments.  Usage example: `REDUCE( [ 1, 2, 3 ] , (x, y) -> x + y, 0)` would sum the input list, yielding `6`.
+  * Input:                      
+    * list - List of arguments.
+    * binary_operation - The lambda expression function to apply to reduce the list. It is assumed that this takes two arguments, the first being the running total and the second being an item from the list.
+    * initial_value - The initial value to use.
+  * Returns: The reduction of the list.
+  
 ### `REGEXP_MATCH`
   * Description: Determines whether a regex matches a string
   * Input:
@@ -626,6 +726,62 @@ This will convert the timestamp field to an epoch timestamp based on the
 * The value in `dc2tz` associated with the value associated with field
   `dc`, defaulting to `UTC`
 
+## Stellar Benchmarks
+
+A microbenchmarking utility is included to assist in executing microbenchmarks for Stellar functions.
+The utility can be executed via maven using the `exec` plugin, like so, from the `metron-common` directory:
+
+```
+mvn -DskipTests clean package && \
+mvn exec:java -Dexec.mainClass="org.apache.metron.common.stellar.benchmark.StellarMicrobenchmark" -Dexec.args="..."
+ ```
+where `exec.args` can be one of the following:
+```
+    -e,--expressions <FILE>   Stellar expressions
+    -h,--help                 Generate Help screen
+    -n,--num_times <NUM>      Number of times to run per expression (after
+                              warmup). Default: 1000
+    -o,--output <FILE>        File to write output.
+    -p,--percentiles <NUM>    Percentiles to calculate per run. Default:
+                              50.0,75.0,95.0,99.0
+    -v,--variables <FILE>     File containing a JSON Map of variables to use
+    -w,--warmup <NUM>         Number of times for warmup per expression.
+                              Default: 100
+```
+
+For instance, to run with a set of Stellar expression in file `/tmp/expressions.txt`:
+```
+ # simple functions
+ TO_UPPER('casey')
+ TO_LOWER(name)
+ # math functions
+ 1 + 2*(3 + int_num) / 10.0
+ 1.5 + 2*(3 + double_num) / 10.0
+ # conditionals
+ if ('foo' in ['foo']) OR one == very_nearly_one then 'one' else 'two'
+ 1 + 2*(3 + int_num) / 10.0
+ #Network funcs
+ DOMAIN_TO_TLD(domain)
+ DOMAIN_REMOVE_SUBDOMAINS(domain)
+```
+And variables in file `/tmp/variables.json`:
+```
+{
+  "name" : "casey",
+  "int_num" : 1,
+  "double_num" : 17.5,
+  "one" : 1,
+  "very_nearly_one" : 1.000001,
+  "domain" : "www.google.com"
+}
+```
+
+Written to file `/tmp/output.txt` would be the following command:
+```
+mvn -DskipTests clean package && \
+mvn exec:java -Dexec.mainClass="org.apache.metron.common.stellar.benchmark.StellarMicrobenchmark" \
+-Dexec.args="-e /tmp/expressions.txt -v /tmp/variables.json -o ./output.json"
+ ```
 ## Stellar Shell
 
 A REPL (Read Eval Print Loop) for the Stellar language that helps in debugging, troubleshooting and learning Stellar.  The Stellar DSL (domain specific language) is used to act upon streaming data within Apache Storm.  It is difficult to troubleshoot Stellar when it can only be executed within a Storm topology.  This REPL is intended to help mitigate that problem by allowing a user to replicate data encountered in production, isolate initialization errors, or understand function resolution problems.
@@ -639,6 +795,8 @@ Shell-like operations are supported such as
   * NOTE: Stellar functions are read via a classpath search which
     happens in the background.  Until that happens, autocomplete will not include function names. 
 * emacs or vi keybindings for edit mode
+
+Note: Stellar classpath configuration from the global config is honored here if the REPL knows about zookeeper.
 
 ### Getting Started
 
@@ -688,6 +846,7 @@ work on it via the REPL.
 *Optional*
 
 Attempts to connect to Zookeeper and read the Metron global configuration.  Stellar functions may require the global configuration to work properly.  If found, the global configuration values are printed to the console.
+If specified, then the classpath may be augmented by the paths specified in the stellar config in the global config.
 
 ```
 $ $METRON_HOME/bin/stellar -z node1:2181
@@ -781,6 +940,7 @@ This configuration is stored in zookeeper, but looks something like
   "es.ip": "node1",
   "es.port": "9300",
   "es.date.format": "yyyy.MM.dd.HH",
+  "parser.error.topic": "indexing"
   "fieldValidations" : [
               {
                 "input" : [ "ip_src_addr", "ip_dst_addr" ],
@@ -793,7 +953,55 @@ This configuration is stored in zookeeper, but looks something like
 }
 ```
 
-## Validation Framework
+# Stellar Configuration
+
+Stellar can be configured in a variety of ways from the global config.
+In particular, there are three main configuration parameters around configuring Stellar:
+* `stellar.function.paths`
+* `stellar.function.resolver.includes`
+* `stellar.function.resolver.excludes`
+
+## `stellar.function.paths`
+
+If specified, Stellar will use a custom classloader which will wrap the
+context classloader and allow for the resolution of classes stored in jars
+not shipped with Metron and stored in a variety of mediums:
+* On HDFS
+* In tar.gz files
+* At http/s locations
+* At ftp locations
+
+This path is a comma separated list of 
+* URIs
+* URIs with a regex pattern ending it for matching within a directory
+
+```json
+{
+ ...
+  "stellar.function.paths" : "hdfs://node1:8020/apps/metron/stellar/metron-management-0.4.0.jar, hdfs://node1:8020/apps/metron/3rdparty/.*.jar"
+}
+```
+
+Please be aware that this classloader does not reload functions dynamically
+and the classpath specified here in the global config is read on topology start.
+  A change in classpath, to be picked up, would necessitate a topology restart
+at the moment
+
+## `stellar.function.resolver.{includes,excludes}`
+
+If specified, this defines one or more regular expressions applied to the classes implementing the Stellar function
+that specify what should be included when searching for Stellar functions.
+* `stellar.function.resolver.includes` defines the list of classes to include.
+* `stellar.function.resolver.excludes` defines the list of classes to exclude.
+
+```json
+{
+ ...
+  "stellar.function.resolver.includes" : "org.apache.metron.*,com.myorg.stellar.*"
+}
+```
+
+# Validation Framework
 
 Inside of the global configuration, there is a validation framework in
 place that enables the validation that messages coming from all parsers
@@ -850,3 +1058,39 @@ Usage examples:
 * To dump the existing configs from zookeeper on the singlenode vagrant machine: `$METRON_HOME/bin/zk_load_configs.sh -z node1:2181 -m DUMP`
 * To push the configs into zookeeper on the singlenode vagrant machine: `$METRON_HOME/bin/zk_load_configs.sh -z node1:2181 -m PUSH -i $METRON_HOME/config/zookeeper`
 * To pull the configs from zookeeper to the singlenode vagrant machine disk: `$METRON_HOME/bin/zk_load_configs.sh -z node1:2181 -m PULL -o $METRON_HOME/config/zookeeper -f`
+
+# Topology Errors
+
+Errors generated in Metron topologies are transformed into JSON format and follow this structure:
+
+```
+{
+  "exception": "java.lang.IllegalStateException: Unable to parse Message: ...",
+  "failed_sensor_type": "bro",
+  "stack": "java.lang.IllegalStateException: Unable to parse Message: ...",
+  "hostname": "node1",
+  "source:type": "error",
+  "raw_message": "{\"http\": {\"ts\":1488809627.000000.31915,\"uid\":\"C9JpSd2vFAWo3mXKz1\", ...",
+  "error_hash": "f7baf053f2d3c801a01d196f40f3468e87eea81788b2567423030100865c5061",
+  "error_type": "parser_error",
+  "message": "Unable to parse Message: {\"http\": {\"ts\":1488809627.000000.31915,\"uid\":\"C9JpSd2vFAWo3mXKz1\", ...",
+  "timestamp": 1488809630698
+}
+```
+
+Each topology can be configured to send error messages to a specific Kafka topic.  The parser topologies retrieve this setting from the the `parser.error.topic` setting in the global config:
+```
+{
+  "es.clustername": "metron",
+  "es.ip": "node1",
+  "es.port": "9300",
+  "es.date.format": "yyyy.MM.dd.HH",
+  "parser.error.topic": "indexing"
+}
+```
+
+Error topics for enrichment and threat intel errors are passed into the enrichment topology as flux properties named `enrichment.error.topic` and `threat.intel.error.topic`.  These properties can be found in `$METRON_HOME/config/enrichment.properties`.
+  
+The error topic for indexing errors is passed into the indexing topology as a flux property named `index.error.topic`.  This property can be found in either `$METRON_HOME/config/elasticsearch.properties` or `$METRON_HOME/config/solr.properties` depending on the search engine selected.
+
+By default all error messages are sent to the `indexing` topic so that they are indexed and archived, just like other messages.  The indexing config for error messages can be found at `$METRON_HOME/config/zookeeper/indexing/error.json`.

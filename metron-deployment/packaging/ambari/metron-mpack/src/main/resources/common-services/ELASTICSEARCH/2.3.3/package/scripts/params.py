@@ -23,6 +23,7 @@ from resource_management.libraries.script import Script
 # server configurations
 config = Script.get_config()
 
+masters_also_are_datanodes = config['configurations']['elastic-site']['masters_also_are_datanodes']
 elastic_home = config['configurations']['elastic-sysconfig']['elastic_home']
 data_dir = config['configurations']['elastic-sysconfig']['data_dir']
 work_dir = config['configurations']['elastic-sysconfig']['work_dir']
@@ -32,10 +33,10 @@ max_open_files = config['configurations']['elastic-sysconfig']['max_open_files']
 max_map_count = config['configurations']['elastic-sysconfig']['max_map_count']
 
 elastic_user = config['configurations']['elastic-env']['elastic_user']
-user_group = config['configurations']['elastic-env']['user_group']
+elastic_group = config['configurations']['elastic-env']['elastic_group']
 log_dir = config['configurations']['elastic-env']['elastic_log_dir']
-pid_dir = '/var/run/elasticsearch'
-pid_file = '/var/run/elasticsearch/elasticsearch.pid'
+pid_dir = config['configurations']['elastic-env']['elastic_pid_dir']
+
 hostname = config['hostname']
 java64_home = config['hostLevelParams']['java_home']
 elastic_env_sh_template = config['configurations']['elastic-env']['content']
@@ -76,3 +77,4 @@ discovery_zen_fd_ping_timeout = config['configurations']['elastic-site']['discov
 discovery_zen_fd_ping_retries = config['configurations']['elastic-site']['discovery_zen_fd_ping_retries']
 
 network_host = config['configurations']['elastic-site']['network_host']
+network_publish_host = config['configurations']['elastic-site']['network_publish_host']

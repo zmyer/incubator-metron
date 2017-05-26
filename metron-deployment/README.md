@@ -1,97 +1,51 @@
 # Overview
-This set of playbooks can be used to deploy an Ambari-managed Hadoop cluster, Metron services, or both using ansible
-playbooks. These playbooks currently only target RHEL/CentOS 6.x operating
+This set of playbooks can be used to deploy an Ambari-managed Hadoop cluster containing Metron services using Ansible. These playbooks target RHEL/CentOS 6.x operating
 systems.
 
-In addition, an Ambari Management Pack can be built which can be deployed in conjuction with RPMs detailed in this README.
+Installation consists of -
+- Building Metron tarballs, RPMs and the Ambari MPack
+- Deploying Ambari
+- Leveraging Ambari to install:
+  * The required Hadoop Components
+  * Core Metron (Parsing, Enrichment, Indexing)
+  * Elasticsearch
+  * Kibana
+- Starting All Services
 
 ## Prerequisites
 The following tools are required to run these scripts:
 
 - [Maven](https://maven.apache.org/)
 - [Git](https://git-scm.com/)
-- [Ansible](http://www.ansible.com/) (version 2.0 or greater)
-
-Currently Metron must be built from source.  Before running these scripts perform the following steps:
-
-1. Clone the Metron git repository with `git clone git@github.com:apache/incubator-metron.git`
-2. Navigate to `incubator-metron` and run `mvn clean package`
+- [Ansible](http://www.ansible.com/) (2.0.0.2 or 2.2.2.0)
+- [Docker](https://www.docker.com/) (Docker for Mac on OSX)
 
 These scripts depend on two files for configuration:
 
 - hosts - declares which Ansible roles will be run on which hosts
 - group_vars/all - various configuration settings needed to install Metron
 
-Examples can be found in the
-`incubator-metron/metron-deployment/inventory/metron_example` directory and are a good starting point.  Copy this directory
-into `incubator-metron/metron-deployment/inventory/` and rename it to your `project_name`.  More information about Ansible files and directory
-structure can be found at http://docs.ansible.com/ansible/playbooks_best_practices.html.
-
+For production use, it is recommended that Metron be installed on an existing cluster managed by Ambari as described in the Installing Management Pack section below.
 ## Ambari
-The Ambari playbook will install a Hadoop cluster with all the services and configuration required by Metron.  This
-section can be skipped if installing Metron on a pre-existing cluster.
+The Ambari playbook will install a Hadoop cluster including the Metron Services (Parsing, Enrichment, Indexing). Ambari will also install Elasticsearch and Kibana.
 
-Currently, this playbook supports building a local development cluster running on one node but options for other types
- of clusters will be added in the future.
-
-### Setting up your inventory
-Make sure to update the hosts file in `incubator-metron/metron-deployment/inventory/project_name/hosts` or provide an
-alternate inventory file when you launch the playbooks, including the
-ssh user(s) and ssh keyfile location(s). These playbooks expect two
-host groups:
-
-- ambari_master
-- ambari_slaves
-
-### Running the playbook
-This playbook will install the Ambari server on the ambari_master, install the ambari agents on
-the ambari_slaves, and create a cluster in Ambari with a blueprint for the required
-Metron components.
-
-Navigate to `incubator-metron/metron-deployment/playbooks` and run:
-`ansible-playbook -i ../inventory/project_name ambari_install.yml`
-
-## Metron
-The Metron playbook will gather the necessary cluster settings from Ambari and install the Metron services.
-
-### Setting up your inventory
-Edit the hosts file at `incubator-metron/metron-deployment/inventory/project_name/hosts`.  Declare where which hosts the
-Metron services will be installed on by updating these groups:
-
-- enrichment - submits the topology code to Storm and requires a storm client
-- search - host where Elasticsearch will be run
-- web - host where the Metron UI and underlying services will run
-- sensors - host where network data will be collected and published to Kafka
-
-The Metron topologies depend on Kafka topics and HBase tables being created beforehand.  Declare a host that has Kafka and HBase clients installed by updating these groups:
-
-- metron_kafka_topics
-- metron_hbase_tables
-
-If only installing Metron, these groups can be ignored:
-
-- ambari_master
-- ambari_slaves
-
-### Configuring group variables
-The Metron Ansible scripts depend on a set of variables.  These variables can be found in the file at
-`incubator-metron/metron-deployment/inventory/project_name/group_vars/all`.  Edit the ambari* variables to match your Ambari
-instance and update the java_home variable to match the java path on your hosts.
-
-### Running the playbook
-Navigate to `incubator-metron/metron-deployment/playbooks` and run:
-`ansible-playbook -i ../inventory/project_name metron_install.yml`
+Currently, the playbooks supports building a local development cluster running on one node or deploying to a 10 node cluster on AWS EC2.
 
 ## Vagrant
-A VagrantFile is included and will install a working version of the entire Metron stack.  The following is required to
-run this:
+There are current two Vagrant modes, full-dev and quick-dev. Full-dev installs the entire Ambari/Metron stack. This is useful in testing out changes to the installation procedure.
+Quick-dev re-installs the core Metron Services (Parsing, Enrichment, and Indexing)on a pre-built instance.
+Use quick-dev for testing out changes to core Metron services.
 
-- [Vagrant](https://www.vagrantup.com/)
-- Hostmanager plugin for vagrant - Run `vagrant plugin install vagrant-hostmanager` on the machine where Vagrant is
+### Prerequsities
+- Install [Vagrant](https://www.vagrantup.com/) (5.0.16+)
+- Install the Hostmanager plugin for vagrant - Run `vagrant plugin install vagrant-hostmanager` on the machine where Vagrant is
 installed
 
-Navigate to `incubator-metron/metron-deployment/vagrant/full-dev-platform` and run `vagrant up`.  This also provides a good
-example of how to run a full end-to-end Metron install.
+### Full-Dev
+Navigate to `metron/metron-deployment/vagrant/full-dev-platform` and run `vagrant up`.
+
+### Quick-Dev
+Navigate to `metron/metron-deployment/vagrant/quick-dev-platform` and run `vagrant up`.
 
 ## Ambari Management Pack
 An Ambari Management Pack can be built in order to make the Metron service available on top of an existing stack, rather than needing a direct stack update.
@@ -105,7 +59,7 @@ This will set up
 - Optional Kibana
 
 ### Prerequisites
-- A cluster managed by Ambari 2.4
+- A cluster managed by Ambari 2.4.2+
 - Metron RPMs available on the cluster in the /localrepo directory.  See [RPM](#rpm) for further information.
 
 ### Building Management Pack
@@ -165,6 +119,18 @@ Components in the RPMs:
 - Docker.  The image detailed in: `metron-deployment/packaging/docker/rpm-docker/README.md` will automatically be built (or rebuilt if necessary).
 - Artifacts for metron-platform have been produced.  E.g. `mvn clean package -DskipTests` in `metron-platform`
 
+The artifacts are required because there is a dependency on modules not expressed via Maven (we grab the resulting assemblies, but don't need the jars).  These are
+- metron-common
+- metron-data-management
+- metron-elasticsearch
+- metron-enrichment
+- metron-indexing
+- metron-parsers
+- metron-pcap-backend
+- metron-solr
+- metron-profiler
+- metron-config
+
 ### Building RPMs
 From `metron-deployment` run
 ```
@@ -175,6 +141,38 @@ The output RPM files will land in `target/RPMS/noarch`.  They can be installed w
 ```
 rpm -i <package>
 ```
+
+## Kibana Dashboards
+
+The dashboards installed by the Kibana custom action are managed by the dashboard.p file.  This file is created by exporting existing dashboards from a running Kibana instance.
+
+To create a new version of the file, make any necessary changes to Kibana (e.g. on quick-dev), and export with the appropriate script.
+
+```
+python packaging/ambari/metron-mpack/src/main/resources/common-services/KIBANA/4.5.1/package/scripts/dashboard/dashboardindex.py \
+$ES_HOST 9200 \
+packaging/ambari/metron-mpack/src/main/resources/common-services/KIBANA/4.5.1/package/scripts/dashboard/dashboard.p -s
+```
+
+Build the Ambari Mpack to get the dashboard updated appropriately.
+
+Once the MPack is installed, run the Kibana service's action "Load Template" to install dashboards.  This will completely overwrite the .kibana in Elasticsearch, so use with caution.
+
+## Kerberos
+The MPack can allow Metron to be installed and then Kerberized, or installed on top of an already Kerberized cluster.  This is done through Ambari's standard Kerberization setup.
+
+### Caveats
+* For nodes using a Metron client and a local repo, the repo must exist on all nodes (e.g via createrepo). This repo can be empty; only the main Metron services need the RPMs.
+* A Metron client must be installed on each supervisor node in a secured cluster.  This is to ensure that the Metron keytab and client_jaas.conf get distributed in order to allow reading and writing from Kafka.
+  * When Metron is already installed on the cluster, this should be done before Kerberizing.
+  * When addding Metron to an already Kerberized cluster, ensure that all supervisor nodes receive a Metron client.
+* Storm (and Metron) must be restarted after Metron is installed on an already Kerberized cluster.  Several Storm configs get updated, and Metron will be unable to write to Kafka without a restart.
+  * Kerberizing a cluster with an existing Metron already has restarts of all services during Kerberization, so it's unneeded.
+
+Instructions for setup on Full Dev can be found at [Kerberos-ambari-setup.md](Kerberos-ambari-setup.md).  These instructions reference the manual install instructions.
+
+### Kerberos Without an MPack
+Using the MPack is preferred, but instructions for Kerberizing manually can be found at [Kerberos-manual-setup.md](Kerberos-manual-setup.md). These instructions are reference by the Ambari Kerberos install instructions and include commands for setting up a KDC.
 
 ## TODO
 - Support Ubuntu deployments

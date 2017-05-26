@@ -18,9 +18,12 @@
 package org.apache.metron.enrichment.bolt;
 
 import org.apache.log4j.Level;
+import org.apache.metron.common.message.MessageGetStrategy;
+import org.apache.metron.common.message.MessageGetters;
 import org.apache.metron.common.writer.BulkWriterResponse;
 import org.apache.metron.test.utils.UnitTestHelper;
 import org.apache.metron.writer.BulkWriterComponent;
+import org.apache.storm.task.TopologyContext;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
 import org.adrianwalker.multilinestring.Multiline;
@@ -112,16 +115,20 @@ public class BulkMessageWriterBoltTest extends BaseEnrichmentBoltTest {
   @Mock
   private BulkMessageWriter<JSONObject> bulkMessageWriter;
 
+  @Mock
+  private MessageGetStrategy messageGetStrategy;
+
   @Test
   public void test() throws Exception {
-    BulkMessageWriterBolt bulkMessageWriterBolt = new BulkMessageWriterBolt("zookeeperUrl").withBulkMessageWriter(bulkMessageWriter);
+    BulkMessageWriterBolt bulkMessageWriterBolt = new BulkMessageWriterBolt("zookeeperUrl")
+            .withBulkMessageWriter(bulkMessageWriter).withMessageGetter(MessageGetters.JSON_FROM_FIELD.name()).withMessageGetterField("message");
     bulkMessageWriterBolt.setCuratorFramework(client);
     bulkMessageWriterBolt.setTreeCache(cache);
     bulkMessageWriterBolt.getConfigurations().updateSensorIndexingConfig(sensorType, new FileInputStream(sampleSensorIndexingConfigPath));
     bulkMessageWriterBolt.declareOutputFields(declarer);
     verify(declarer, times(1)).declareStream(eq("error"), argThat(new FieldsMatcher("message")));
     Map stormConf = new HashMap();
-    doThrow(new Exception()).when(bulkMessageWriter).init(eq(stormConf), any(WriterConfiguration.class));
+    doThrow(new Exception()).when(bulkMessageWriter).init(eq(stormConf),any(TopologyContext.class), any(WriterConfiguration.class));
     try {
       bulkMessageWriterBolt.prepare(stormConf, topologyContext, outputCollector);
       fail("A runtime exception should be thrown when bulkMessageWriter.init throws an exception");
@@ -129,7 +136,7 @@ public class BulkMessageWriterBoltTest extends BaseEnrichmentBoltTest {
     reset(bulkMessageWriter);
     when(bulkMessageWriter.getName()).thenReturn("hdfs");
     bulkMessageWriterBolt.prepare(stormConf, topologyContext, outputCollector);
-    verify(bulkMessageWriter, times(1)).init(eq(stormConf), any(WriterConfiguration.class));
+    verify(bulkMessageWriter, times(1)).init(eq(stormConf),any(TopologyContext.class), any(WriterConfiguration.class));
     tupleList = new ArrayList<>();
     for(int i = 0; i < 4; i++) {
       when(tuple.getValueByField("message")).thenReturn(messageList.get(i));

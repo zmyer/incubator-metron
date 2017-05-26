@@ -15,7 +15,9 @@
 #  limitations under the License.
 #
 ---
-# tasks file for ambari_slave
+- include: ../roles/metron-rpms/tasks/create_directory.yml
+- include: ../roles/metron-rpms/tasks/create_repo.yml
+
 - name: Install ambari-agent
   yum:
     name: ambari-agent
@@ -45,7 +47,10 @@
     - { regexp: "^hostname_script=.*$", line: "hostname_script=/var/lib/ambari-agent/hostname.sh", insertafter: '\[agent\]'}
 
 - name: Ensure ambari-agent is running
-  service: name=ambari-agent state=restarted
+  service:
+    name: ambari-agent
+    state: restarted
+    enabled: yes
 
 - name : Wait for agent to register
   command : sleep 10

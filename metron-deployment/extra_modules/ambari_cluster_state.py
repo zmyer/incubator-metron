@@ -142,7 +142,7 @@ def main():
         blueprint_var=dict(type='dict', required=False),
         blueprint_name=dict(type='str', default=None, required=False),
         configurations=dict(type='list', default=None, required=False),
-        wait_for_complete=dict(default=False, required=False, choices=BOOLEANS),
+        wait_for_complete=dict(default=False, required=False, type='bool'),
     )
 
     required_together = ['blueprint_var', 'blueprint_name']
@@ -385,9 +385,9 @@ def blueprint_var_to_ambari_converter(blueprint_var):
         this_host_map['hosts'] = this_host_list
         host_map.append(this_host_map)
     blueprint = dict()
+    blueprint['configurations'] = blueprint_var['required_configurations']
     blueprint['host_groups'] = new_groups
     blueprint['Blueprints'] = {'stack_name': blueprint_var['stack_name'], 'stack_version': blueprint_var['stack_version']}
-
     return blueprint, host_map
 
 from ansible.module_utils.basic import *

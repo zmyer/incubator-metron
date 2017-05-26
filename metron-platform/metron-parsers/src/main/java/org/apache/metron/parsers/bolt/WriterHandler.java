@@ -18,7 +18,9 @@
 
 package org.apache.metron.parsers.bolt;
 
+import org.apache.metron.common.message.MessageGetStrategy;
 import org.apache.storm.task.OutputCollector;
+import org.apache.storm.task.TopologyContext;
 import org.apache.storm.tuple.Tuple;
 import org.apache.metron.common.configuration.ParserConfigurations;
 import org.apache.metron.common.configuration.writer.ParserWriterConfiguration;
@@ -56,7 +58,7 @@ public class WriterHandler implements Serializable {
     return isBulk;
   }
 
-  public void init(Map stormConf, OutputCollector collector, ParserConfigurations configurations) {
+  public void init(Map stormConf, TopologyContext topologyContext, OutputCollector collector, ParserConfigurations configurations) {
     if(isBulk) {
       writerTransformer = config -> new ParserWriterConfiguration(config);
     }
@@ -64,7 +66,7 @@ public class WriterHandler implements Serializable {
       writerTransformer = config -> new SingleBatchConfigurationFacade(new ParserWriterConfiguration(config));
     }
     try {
-      messageWriter.init(stormConf, writerTransformer.apply(configurations));
+      messageWriter.init(stormConf, topologyContext, writerTransformer.apply(configurations));
     } catch (Exception e) {
       throw new IllegalStateException("Unable to initialize message writer", e);
     }
@@ -80,11 +82,12 @@ public class WriterHandler implements Serializable {
                    , Tuple tuple
                    , JSONObject message
                    , ParserConfigurations configurations
+                   , MessageGetStrategy messageGetStrategy
                    ) throws Exception {
-    writerComponent.write(sensorType, tuple, message, messageWriter, writerTransformer.apply(configurations));
+    writerComponent.write(sensorType, tuple, message, messageWriter, writerTransformer.apply(configurations), messageGetStrategy);
   }
 
-  public void errorAll(String sensorType, Throwable e) {
-    writerComponent.errorAll(sensorType, e);
+  public void errorAll(String sensorType, Throwable e, MessageGetStrategy messageGetStrategy) {
+    writerComponent.errorAll(sensorType, e, messageGetStrategy);
   }
 }

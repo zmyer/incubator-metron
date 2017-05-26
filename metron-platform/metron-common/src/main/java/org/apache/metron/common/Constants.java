@@ -17,7 +17,9 @@
  */
 package org.apache.metron.common;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class Constants {
@@ -27,18 +29,16 @@ public class Constants {
   public static final long DEFAULT_CONFIGURED_BOLT_TIMEOUT = 5000;
   public static final String SENSOR_TYPE = "source.type";
   public static final String ENRICHMENT_TOPIC = "enrichments";
-  public static final String ENRICHMENT_ERROR_TOPIC = "enrichments_error";
-  public static final String THREAT_INTEL_ERROR_TOPIC = "threatintel_error";
   public static final String INDEXING_TOPIC = "indexing";
-  public static final String INDEXING_ERROR_TOPIC = "indexing_error";
-  public static final String DEFAULT_PARSER_ERROR_TOPIC = "parser_error";
-  public static final String DEFAULT_PARSER_INVALID_TOPIC = "parser_invalid";
   public static final String ERROR_STREAM = "error";
-  public static final String INVALID_STREAM = "invalid";
   public static final String SIMPLE_HBASE_ENRICHMENT = "hbaseEnrichment";
   public static final String SIMPLE_HBASE_THREAT_INTEL = "hbaseThreatIntel";
+  public static final String GUID = "guid";
 
-  public static enum Fields {
+  public interface Field {
+    String getName();
+  }
+  public enum Fields implements Field {
      SRC_ADDR("ip_src_addr")
     ,SRC_PORT("ip_src_port")
     ,DST_ADDR("ip_dst_addr")
@@ -69,6 +69,52 @@ public class Constants {
 
     public static Fields fromString(String fieldName) {
       return nameToField.get(fieldName);
+    }
+  }
+
+  public enum ErrorFields {
+    MESSAGE("message")
+    ,FAILED_SENSOR_TYPE("failed_sensor_type")
+    ,ERROR_TYPE("error_type")
+    ,EXCEPTION("exception")
+    ,STACK("stack")
+    ,TIMESTAMP("timestamp")
+    ,HOSTNAME("hostname")
+    ,RAW_MESSAGE("raw_message")
+    ,RAW_MESSAGE_BYTES("raw_message_bytes")
+    ,ERROR_FIELDS("error_fields")
+    ,ERROR_HASH("error_hash")
+    ;
+
+    private String name;
+
+    ErrorFields(String name) {
+      this.name = name;
+    }
+
+    public String getName() {
+      return name;
+    }
+  }
+
+  public enum ErrorType {
+
+     PARSER_ERROR("parser_error")
+    ,PARSER_INVALID("parser_invalid")
+    ,ENRICHMENT_ERROR("enrichments_error")
+    ,THREAT_INTEL_ERROR("threatintel_error")
+    ,INDEXING_ERROR("indexing_error")
+    ,DEFAULT_ERROR("error")
+    ;
+
+    private String type;
+
+    ErrorType(String type) {
+      this.type = type;
+    }
+
+    public String getType() {
+      return type;
     }
   }
 

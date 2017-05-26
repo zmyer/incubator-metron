@@ -26,7 +26,6 @@ import org.apache.metron.TestConstants;
 import org.apache.metron.common.Constants;
 import org.apache.metron.common.configuration.ConfigurationsUtils;
 import org.apache.metron.common.interfaces.FieldNameConverter;
-import org.apache.metron.common.spout.kafka.SpoutConfig;
 import org.apache.metron.common.utils.JSONUtils;
 import org.apache.metron.enrichment.integration.components.ConfigUploadComponent;
 import org.apache.metron.integration.BaseIntegrationTest;
@@ -44,7 +43,6 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import javax.annotation.Nullable;
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
@@ -53,6 +51,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.apache.metron.common.configuration.ConfigurationsUtils.getClient;
 
 public abstract class IndexingIntegrationTest extends BaseIntegrationTest {
+  protected static final String ERROR_TOPIC = "indexing_error";
   protected String hdfsDir = "target/indexingIntegrationTest/hdfs";
   protected String sampleParsedPath = TestConstants.SAMPLE_DATA_PARSED_PATH + "TestExampleParsed";
   protected String fluxPath = "../metron-indexing/src/main/flux/indexing/remote.yaml";
@@ -121,12 +120,15 @@ public abstract class IndexingIntegrationTest extends BaseIntegrationTest {
     final String dateFormat = "yyyy.MM.dd.HH";
     final List<byte[]> inputMessages = TestUtils.readSampleData(sampleParsedPath);
     final Properties topologyProperties = new Properties() {{
-      setProperty("kafka.start", SpoutConfig.Offset.BEGINNING.name());
+      setProperty("kafka.start", "UNCOMMITTED_EARLIEST");
+      setProperty("kafka.security.protocol", "PLAINTEXT");
+      setProperty("storm.auto.credentials", "[]");
       setProperty("indexing.workers", "1");
       setProperty("indexing.executors", "0");
       setProperty("index.input.topic", Constants.INDEXING_TOPIC);
-      setProperty("index.error.topic", Constants.INDEXING_ERROR_TOPIC);
+      setProperty("index.error.topic", ERROR_TOPIC);
       setProperty("index.date.format", dateFormat);
+      setProperty("topology.auto-credentials", "[]");
       //HDFS settings
 
       setProperty("bolt.hdfs.rotation.policy", TimedRotationPolicy.class.getCanonicalName());
@@ -138,7 +140,7 @@ public abstract class IndexingIntegrationTest extends BaseIntegrationTest {
     final ZKServerComponent zkServerComponent = getZKServerComponent(topologyProperties);
     final KafkaComponent kafkaComponent = getKafkaComponent(topologyProperties, new ArrayList<KafkaComponent.Topic>() {{
       add(new KafkaComponent.Topic(Constants.INDEXING_TOPIC, 1));
-      add(new KafkaComponent.Topic(Constants.INDEXING_ERROR_TOPIC, 1));
+      add(new KafkaComponent.Topic(ERROR_TOPIC, 1));
     }});
     List<Map<String, Object>> inputDocs = new ArrayList<>();
     for(byte[] b : inputMessages) {
@@ -180,9 +182,9 @@ public abstract class IndexingIntegrationTest extends BaseIntegrationTest {
             .withMaxTimeMS(150000)
             .withCustomShutdownOrder(new String[] {"search","storm","config","kafka","zk"})
             .build();
-    runner.start();
 
     try {
+      runner.start();
       while(!isLoaded.get()) {
         Thread.sleep(100);
       }

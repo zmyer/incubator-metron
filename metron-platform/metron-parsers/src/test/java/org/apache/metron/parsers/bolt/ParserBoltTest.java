@@ -17,10 +17,14 @@
  */
 package org.apache.metron.parsers.bolt;
 
+import org.apache.metron.common.Constants;
 import org.apache.metron.common.configuration.*;
 
+import org.apache.metron.common.error.MetronError;
+import org.apache.metron.test.error.MetronErrorJSONMatcher;
 import org.apache.metron.test.utils.UnitTestHelper;
 import org.apache.storm.task.OutputCollector;
+import org.apache.storm.task.TopologyContext;
 import org.apache.storm.tuple.Tuple;
 import com.google.common.collect.ImmutableList;
 import org.apache.metron.common.configuration.writer.ParserWriterConfiguration;
@@ -88,7 +92,7 @@ public class ParserBoltTest extends BaseBoltTest {
     List<JSONObject> records = new ArrayList<>();
 
     @Override
-    public void init(Map stormConf, WriterConfiguration config) throws Exception {
+    public void init(Map stormConf, TopologyContext topologyContext, WriterConfiguration config) throws Exception {
 
     }
 
@@ -151,6 +155,65 @@ public class ParserBoltTest extends BaseBoltTest {
     verify(parser, times(0)).validate(any());
     verify(writer, times(0)).write(eq(sensorType), any(ParserWriterConfiguration.class), eq(tuple), any());
     verify(outputCollector, times(1)).ack(tuple);
+
+    MetronError error = new MetronError()
+            .withErrorType(Constants.ErrorType.PARSER_ERROR)
+            .withThrowable(new NullPointerException())
+            .withSensorType(sensorType)
+            .addRawMessage(sampleBinary);
+    verify(outputCollector, times(1)).emit(eq(Constants.ERROR_STREAM), argThat(new MetronErrorJSONMatcher(error.getJSONObject())));
+  }
+
+  @Test
+  public void testInvalid() throws Exception {
+    String sensorType = "yaf";
+    ParserBolt parserBolt = new ParserBolt("zookeeperUrl", sensorType, parser, new WriterHandler(writer)) {
+      @Override
+      protected ParserConfigurations defaultConfigurations() {
+        return new ParserConfigurations() {
+          @Override
+          public SensorParserConfig getSensorParserConfig(String sensorType) {
+            return new SensorParserConfig() {
+              @Override
+              public Map<String, Object> getParserConfig() {
+                return new HashMap<String, Object>() {{
+                }};
+              }
+
+
+            };
+          }
+        };
+      }
+    };
+
+    buildGlobalConfig(parserBolt);
+
+    parserBolt.setCuratorFramework(client);
+    parserBolt.setTreeCache(cache);
+    parserBolt.prepare(new HashMap(), topologyContext, outputCollector);
+    byte[] sampleBinary = "some binary message".getBytes();
+
+    when(tuple.getBinary(0)).thenReturn(sampleBinary);
+    JSONObject parsedMessage = new JSONObject();
+    parsedMessage.put("field", "invalidValue");
+    parsedMessage.put("guid", "this-is-unique-identifier-for-tuple");
+    List<JSONObject> messageList = new ArrayList<>();
+    messageList.add(parsedMessage);
+    when(parser.parseOptional(sampleBinary)).thenReturn(Optional.of(messageList));
+    when(parser.validate(parsedMessage)).thenReturn(true);
+    parserBolt.execute(tuple);
+
+    MetronError error = new MetronError()
+            .withErrorType(Constants.ErrorType.PARSER_INVALID)
+            .withSensorType(sensorType)
+            .withErrorFields(new HashSet<String>() {{ add("field"); }})
+            .addRawMessage(new JSONObject(){{
+              put("field", "invalidValue");
+              put("source.type", "yaf");
+              put("guid", "this-is-unique-identifier-for-tuple");
+            }});
+    verify(outputCollector, times(1)).emit(eq(Constants.ERROR_STREAM), argThat(new MetronErrorJSONMatcher(error.getJSONObject())));
   }
 
   @Test
@@ -173,9 +236,7 @@ public class ParserBoltTest extends BaseBoltTest {
           }
         };
       }
-
     };
-
     parserBolt.setCuratorFramework(client);
     parserBolt.setTreeCache(cache);
     parserBolt.prepare(new HashMap(), topologyContext, outputCollector);
@@ -183,14 +244,14 @@ public class ParserBoltTest extends BaseBoltTest {
     verify(writer, times(1)).init();
     byte[] sampleBinary = "some binary message".getBytes();
     JSONParser jsonParser = new JSONParser();
-    final JSONObject sampleMessage1 = (JSONObject) jsonParser.parse("{ \"field1\":\"value1\" }");
-    final JSONObject sampleMessage2 = (JSONObject) jsonParser.parse("{ \"field2\":\"value2\" }");
+    final JSONObject sampleMessage1 = (JSONObject) jsonParser.parse("{ \"field1\":\"value1\", \"guid\": \"this-is-unique-identifier-for-tuple\" }");
+    final JSONObject sampleMessage2 = (JSONObject) jsonParser.parse("{ \"field2\":\"value2\", \"guid\": \"this-is-unique-identifier-for-tuple\" }");
     List<JSONObject> messages = new ArrayList<JSONObject>() {{
       add(sampleMessage1);
       add(sampleMessage2);
     }};
-    final JSONObject finalMessage1 = (JSONObject) jsonParser.parse("{ \"field1\":\"value1\", \"source.type\":\"" + sensorType + "\" }");
-    final JSONObject finalMessage2 = (JSONObject) jsonParser.parse("{ \"field2\":\"value2\", \"source.type\":\"" + sensorType + "\" }");
+    final JSONObject finalMessage1 = (JSONObject) jsonParser.parse("{ \"field1\":\"value1\", \"source.type\":\"" + sensorType + "\", \"guid\": \"this-is-unique-identifier-for-tuple\" }");
+    final JSONObject finalMessage2 = (JSONObject) jsonParser.parse("{ \"field2\":\"value2\", \"source.type\":\"" + sensorType + "\", \"guid\": \"this-is-unique-identifier-for-tuple\" }");
     when(tuple.getBinary(0)).thenReturn(sampleBinary);
     when(parser.parseOptional(sampleBinary)).thenReturn(Optional.of(messages));
     when(parser.validate(eq(messages.get(0)))).thenReturn(true);
@@ -237,7 +298,7 @@ public void testImplicitBatchOfOne() throws Exception {
   parserBolt.setTreeCache(cache);
   parserBolt.prepare(new HashMap(), topologyContext, outputCollector);
   verify(parser, times(1)).init();
-  verify(batchWriter, times(1)).init(any(), any());
+  verify(batchWriter, times(1)).init(any(), any(), any());
   when(parser.validate(any())).thenReturn(true);
   when(parser.parseOptional(any())).thenReturn(Optional.of(ImmutableList.of(new JSONObject())));
   when(filter.emitTuple(any(), any(Context.class))).thenReturn(true);
@@ -283,7 +344,7 @@ public void testImplicitBatchOfOne() throws Exception {
     parserBolt.setTreeCache(cache);
     parserBolt.prepare(new HashMap(), topologyContext, outputCollector);
     verify(parser, times(1)).init();
-    verify(batchWriter, times(1)).init(any(), any());
+    verify(batchWriter, times(1)).init(any(), any(), any());
     BulkWriterResponse successResponse = mock(BulkWriterResponse.class);
     when(successResponse.getSuccesses()).thenReturn(ImmutableList.of(t1));
     when(batchWriter.write(any(), any(), any(), any())).thenReturn(successResponse);
@@ -320,7 +381,7 @@ public void testImplicitBatchOfOne() throws Exception {
     parserBolt.setTreeCache(cache);
     parserBolt.prepare(new HashMap(), topologyContext, outputCollector);
     verify(parser, times(1)).init();
-    verify(batchWriter, times(1)).init(any(), any());
+    verify(batchWriter, times(1)).init(any(), any(), any());
     when(parser.validate(any())).thenReturn(true);
     when(parser.parseOptional(any())).thenReturn(Optional.of(ImmutableList.of(new JSONObject(new HashMap<String, Object>() {{
       put("field2", "blah");
@@ -423,7 +484,7 @@ public void testImplicitBatchOfOne() throws Exception {
     parserBolt.setTreeCache(cache);
     parserBolt.prepare(new HashMap(), topologyContext, outputCollector);
     verify(parser, times(1)).init();
-    verify(batchWriter, times(1)).init(any(), any());
+    verify(batchWriter, times(1)).init(any(), any(), any());
     when(parser.validate(any())).thenReturn(true);
     when(parser.parseOptional(any())).thenReturn(Optional.of(ImmutableList.of(new JSONObject())));
     when(filter.emitTuple(any(), any(Context.class))).thenReturn(true);
@@ -462,7 +523,7 @@ public void testImplicitBatchOfOne() throws Exception {
     parserBolt.setTreeCache(cache);
     parserBolt.prepare(new HashMap(), topologyContext, outputCollector);
     verify(parser, times(1)).init();
-    verify(batchWriter, times(1)).init(any(), any());
+    verify(batchWriter, times(1)).init(any(), any(), any());
     when(parser.validate(any())).thenReturn(true);
     when(parser.parseOptional(any())).thenReturn(Optional.of(ImmutableList.of(new JSONObject())));
     when(filter.emitTuple(any(), any(Context.class))).thenReturn(true);
@@ -511,7 +572,7 @@ public void testImplicitBatchOfOne() throws Exception {
     parserBolt.setTreeCache(cache);
     parserBolt.prepare(new HashMap(), topologyContext, outputCollector);
     verify(parser, times(1)).init();
-    verify(batchWriter, times(1)).init(any(), any());
+    verify(batchWriter, times(1)).init(any(), any(), any());
 
     doThrow(new Exception()).when(batchWriter).write(any(), any(), any(), any());
     when(parser.validate(any())).thenReturn(true);
@@ -529,6 +590,16 @@ public void testImplicitBatchOfOne() throws Exception {
     verify(outputCollector, times(1)).ack(t4);
     verify(outputCollector, times(1)).ack(t5);
 
+  }
+
+  protected void buildGlobalConfig(ParserBolt parserBolt) {
+    HashMap<String, Object> globalConfig = new HashMap<>();
+    Map<String, Object> fieldValidation = new HashMap<>();
+    fieldValidation.put("input", Arrays.asList("field"));
+    fieldValidation.put("validation", "STELLAR");
+    fieldValidation.put("config", new HashMap<String, String>(){{ put("condition", "field != 'invalidValue'"); }});
+    globalConfig.put("fieldValidations", Arrays.asList(fieldValidation));
+    parserBolt.getConfigurations().updateGlobalConfig(globalConfig);
   }
 
   private static void writeNonBatch(OutputCollector collector, ParserBolt bolt, Tuple t) {

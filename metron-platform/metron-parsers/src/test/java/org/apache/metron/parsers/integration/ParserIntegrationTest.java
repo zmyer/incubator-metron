@@ -37,6 +37,7 @@ import javax.annotation.Nullable;
 import java.util.*;
 
 public abstract class ParserIntegrationTest extends BaseIntegrationTest {
+  protected static final String ERROR_TOPIC = "parser_error";
   protected List<byte[]> inputMessages;
   @Test
   public void test() throws Exception {
@@ -47,8 +48,7 @@ public abstract class ParserIntegrationTest extends BaseIntegrationTest {
     final KafkaComponent kafkaComponent = getKafkaComponent(topologyProperties, new ArrayList<KafkaComponent.Topic>() {{
       add(new KafkaComponent.Topic(sensorType, 1));
       add(new KafkaComponent.Topic(Constants.ENRICHMENT_TOPIC, 1));
-      add(new KafkaComponent.Topic(Constants.INVALID_STREAM,1));
-      add(new KafkaComponent.Topic(Constants.ERROR_STREAM,1));
+      add(new KafkaComponent.Topic(ERROR_TOPIC,1));
     }});
     topologyProperties.setProperty("kafka.broker", kafkaComponent.getBrokerList());
 
@@ -62,6 +62,7 @@ public abstract class ParserIntegrationTest extends BaseIntegrationTest {
     ParserTopologyComponent parserTopologyComponent = new ParserTopologyComponent.Builder()
             .withSensorType(sensorType)
             .withTopologyProperties(topologyProperties)
+            .withOutputTopic(Constants.ENRICHMENT_TOPIC)
             .withBrokerUrl(kafkaComponent.getBrokerList()).build();
 
     //UnitTestHelper.verboseLogging();
@@ -74,8 +75,8 @@ public abstract class ParserIntegrationTest extends BaseIntegrationTest {
             .withNumRetries(10)
             .withCustomShutdownOrder(new String[] {"org/apache/storm","config","kafka","zk"})
             .build();
-    runner.start();
     try {
+      runner.start();
       kafkaComponent.writeMessages(sensorType, inputMessages);
       ProcessorResult<List<byte[]>> result = runner.process(getProcessor());
       List<byte[]> outputMessages = result.getResult();
@@ -115,13 +116,12 @@ public abstract class ParserIntegrationTest extends BaseIntegrationTest {
     return new KafkaProcessor<>()
             .withKafkaComponentName("kafka")
             .withReadTopic(Constants.ENRICHMENT_TOPIC)
-            .withErrorTopic(Constants.ERROR_STREAM)
-            .withInvalidTopic(Constants.INVALID_STREAM)
+            .withErrorTopic(ERROR_TOPIC)
             .withValidateReadMessages(new Function<KafkaMessageSet, Boolean>() {
               @Nullable
               @Override
               public Boolean apply(@Nullable KafkaMessageSet messageSet) {
-                return (messageSet.getMessages().size() + messageSet.getErrors().size() + messageSet.getInvalids().size()) == inputMessages.size();
+                return (messageSet.getMessages().size() + messageSet.getErrors().size() == inputMessages.size());
               }
             })
             .withProvideResult(new Function<KafkaMessageSet,List<byte[]>>(){
